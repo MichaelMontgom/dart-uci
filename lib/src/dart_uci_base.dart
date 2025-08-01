@@ -65,6 +65,7 @@ Future<void> start() async {
       } else if (line.startsWith('option name ')) {
         // Parse engine options
         final parts = line.split(' ');
+        
         if (parts.length >= 3) {
           final optionName = parts[2];
           options[optionName] = line;
@@ -84,7 +85,9 @@ Future<void> start() async {
       author: engineAuthor ?? 'Unknown',
       options: options,
     );
-    
+
+    print(_engineInfo.toString());
+
     _isInitialized = true;
     return _engineInfo!;
   }
@@ -133,7 +136,7 @@ class EngineInfo {
   });
   
   @override
-  String toString() => 'Engine: $name by $author';
+  String toString() => 'Engine: $name by $author \nOptions: ${options.isEmpty ? 'None' : options}';
 }
 
 class UCIException implements Exception {
