@@ -2,8 +2,7 @@ import 'package:dart_uci/dart_uci.dart';
 
 void main() async{
   // Replace with your preferred UCI chess engine (e.g., Stockfish)
-    // const enginePath = 'path/to/your/chess/engine.exe'; 
-  const enginePath = '"C:\\Users\\mem22\\Downloads\\stockfish-windows-x86-64-avx2\\stockfish\\stockfish-windows-x86-64-avx2.exe"'; // Example path
+    const enginePath = 'path/to/your/chess/engine.exe'; 
 
   var engine = UCIChessEngine(enginePath);
   try{
