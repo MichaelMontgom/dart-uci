@@ -92,6 +92,12 @@ Future<void> start() async {
     return _engineInfo!;
   }
 
+  void _ensureInitialized() {
+    if (_isInitialized == false || _process == null) {
+      throw UCIException('Engine not initialized. Call initialize() first.');
+    }
+  }
+
   Future<void> stop() async {
     if (_process == null) {
       return;
@@ -122,6 +128,30 @@ Future<void> start() async {
       await _process!.stdin.flush();
     }
 
+    // Sets up a new game
+  Future<void> newGame() async {
+    _ensureInitialized();
+    await _sendCommand('ucinewgame');
+  }
+
+  // Sets the current position using FEN notation
+  Future<void> setPosition({String? fen, List<UCIMove>? moves}) async {
+    _ensureInitialized();
+    
+    String command = 'position ';
+    if (fen != null) {
+      command += 'fen $fen';
+    } else {
+      command += 'startpos';
+    }
+    
+    if (moves != null && moves.isNotEmpty) {
+      command += ' moves ${moves.join(' ')}';
+    }
+    
+    await _sendCommand(command);
+  }
+
 }
 
 class EngineInfo {
@@ -145,4 +175,53 @@ class UCIException implements Exception {
   
   @override
   String toString() => 'UCIException: $message';
+}
+
+// Represents engine analysis result
+class EngineAnalysis {
+  final int depth;
+  final int score;
+  final List<UCIMove> principalVariation;
+  final int nodes;
+  final int timeMs;
+  
+  EngineAnalysis({
+    required this.depth,
+    required this.score,
+    required this.principalVariation,
+    required this.nodes,
+    required this.timeMs,
+  });
+  
+  @override
+  String toString() => 'Depth: $depth, Score: $score, PV: ${principalVariation.join(' ')}';
+}
+
+// Represents a chess move in UCI format
+class UCIMove {
+  final String from;
+  final String to;
+  final String? promotion;
+  
+  UCIMove({
+    required this.from,
+    required this.to,
+    this.promotion,
+  });
+  
+  @override
+  String toString() => '$from$to${promotion ?? ''}';
+  
+  // Creates a UCIMove from a string like "e2e4" or "e7e8q"
+  factory UCIMove.fromString(String moveString) {
+    if (moveString.length < 4) {
+      throw ArgumentError('Invalid move string: $moveString');
+    }
+    
+    return UCIMove(
+      from: moveString.substring(0, 2),
+      to: moveString.substring(2, 4),
+      promotion: moveString.length > 4 ? moveString.substring(4) : null,
+    );
+  }
 }
