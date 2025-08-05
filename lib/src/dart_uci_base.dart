@@ -275,6 +275,7 @@ Future<void> start() async {
     await sendCommand(command);
 
     await for (String line in _outputController!.stream) {
+      print(line);
       if (line.startsWith('bestmove ')) {
         final parts = line.split(' ');
         if (parts.length >= 2) {
