@@ -20,9 +20,9 @@ Future<void> start() async {
     try {
       // Start the engine process
       _process = await Process.start(_enginePath, []);
-      _outputController = StreamController<String>();
-      _errorController = StreamController<String>();
-      
+      _outputController = StreamController<String>.broadcast();
+      _errorController = StreamController<String>.broadcast();
+
       // Listen to engine output
       _process!.stdout
           .transform(utf8.decoder)
@@ -50,7 +50,7 @@ Future<void> start() async {
     }
     
     // tell the engine to use UCI protocol
-    await _sendCommand('uci');
+    await sendCommand('uci');
     
     String? engineName;
     String? engineAuthor;
@@ -104,7 +104,7 @@ Future<void> start() async {
     }
 
     //tell the engine to quit
-    await _sendCommand('quit');
+    await sendCommand('quit');
     // Wait for the process to exit
     _process!.kill();
     await _process!.exitCode;
@@ -118,7 +118,7 @@ Future<void> start() async {
     _isInitialized = false;
   }
 
-  Future<void> _sendCommand(String command) async {
+  Future<void> sendCommand(String command) async {
       if (_process == null) {
         throw UCIException('Engine process not running');
       }
@@ -131,7 +131,7 @@ Future<void> start() async {
     // Sets up a new game
   Future<void> newGame() async {
     _ensureInitialized();
-    await _sendCommand('ucinewgame');
+    await sendCommand('ucinewgame');
   }
 
   // Sets the current position using FEN notation
@@ -149,7 +149,141 @@ Future<void> start() async {
       command += ' moves ${moves.join(' ')}';
     }
     
-    await _sendCommand(command);
+    await sendCommand(command);
+  }
+
+  // Sets an engine option
+  Future<void> setOption(String name, dynamic value) async {
+    _ensureInitialized();
+    await sendCommand('setoption name $name value $value');
+  }
+
+  // Checks if the engine is ready
+  Future<bool> isReady() async {
+    if (_process == null || !_isInitialized) return false;
+    
+    await sendCommand('isready');
+    
+    await for (String line in _outputController!.stream) {
+      if (line == 'readyok') {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  EngineAnalysis? _parseInfoLine(String line) {
+    final parts = line.split(' ');
+    
+    int? depth;
+    int? score;
+    List<UCIMove> pv = [];
+    int? nodes;
+    int? timeMs;
+    
+    for (int i = 0; i < parts.length; i++) {
+      switch (parts[i]) {
+        case 'depth':
+          if (i + 1 < parts.length) depth = int.tryParse(parts[i + 1]);
+          break;
+        case 'score':
+          if (i + 2 < parts.length && parts[i + 1] == 'cp') {
+            score = int.tryParse(parts[i + 2]);
+          }
+          break;
+        case 'pv':
+          for (int j = i + 1; j < parts.length; j++) {
+            try {
+              pv.add(UCIMove.fromString(parts[j]));
+            } catch (e) {
+              break;
+            }
+          }
+          break;
+        case 'nodes':
+          if (i + 1 < parts.length) nodes = int.tryParse(parts[i + 1]);
+          break;
+        case 'time':
+          if (i + 1 < parts.length) timeMs = int.tryParse(parts[i + 1]);
+          break;
+      }
+    }
+    
+    if (depth != null && score != null) {
+      return EngineAnalysis(
+        depth: depth,
+        score: score,
+        principalVariation: pv,
+        nodes: nodes ?? 0,
+        timeMs: timeMs ?? 0,
+      );
+    }
+    
+    return null;
+  }
+
+  // Analyzes the current position and returns analysis data
+  Future<Stream<EngineAnalysis>> analyze({
+    int? depth,
+    int? timeMs,
+  }) async {
+    _ensureInitialized();
+    
+    final controller = StreamController<EngineAnalysis>();
+    
+    String command = 'go';
+    if (depth != null) command += ' depth $depth';
+    if (timeMs != null) command += ' movetime $timeMs';
+    if (depth == null && timeMs == null) command += ' infinite';
+    
+    await sendCommand(command);
+    
+    _outputController!.stream.listen((line) {
+      if (line.startsWith('info ')) {
+        final analysis = _parseInfoLine(line);
+        if (analysis != null) {
+          controller.add(analysis);
+        }
+      } else if (line.startsWith('bestmove ')) {
+        controller.close();
+      }
+    });
+    
+    return controller.stream;
+  }
+
+  // Stops the current analysis or search
+  Future<void> stopAnalysis() async {
+    _ensureInitialized();
+    await sendCommand('stop');
+  }
+
+  // Gets the best move from the current position
+  Future<UCIMove> getBestMove({
+    int? depth,
+    int? timeMs,
+    int? nodes,
+  }) async {
+    _ensureInitialized();
+    
+    String command = 'go';
+    if (depth != null) command += ' depth $depth';
+    if (timeMs != null) command += ' movetime $timeMs';
+    if (nodes != null) command += ' nodes $nodes';
+
+    await sendCommand(command);
+
+    await for (String line in _outputController!.stream) {
+      if (line.startsWith('bestmove ')) {
+        final parts = line.split(' ');
+        if (parts.length >= 2) {
+          return UCIMove.fromString(parts[1]);
+        }
+      }
+    }
+    
+    throw UCIException('Engine did not provide a best move');
   }
 
 }
