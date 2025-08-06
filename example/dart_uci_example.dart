@@ -40,14 +40,14 @@ void main() async{
     await engine.setPosition(fen: analysisFen);
 
     print('Starting analysis stream...');
-    final analysisStream = await engine.analyze(timeMs: 5000);
+    final analysisStream = await engine.analyze(timeMs: 5000, depth: 30);
     
     print('Listening to analysis...');
     var count = 0;
     await for (final analysis in analysisStream) {
       count++;
       print('Analysis $count: Depth: ${analysis.depth}, Score: ${analysis.score}, PV: ${analysis.principalVariation.join(' ')}, Nodes: ${analysis.nodes}, Time: ${analysis.timeMs}ms');
-      if (count >= 10) break; // Stop after 10 results for testing
+       // Stop after 10 results for testing
     }
     
     print('Analysis completed with $count results');
