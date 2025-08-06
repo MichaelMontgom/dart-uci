@@ -34,12 +34,25 @@ void main() async{
     final bestMoveScandinavian = await engine.getBestMove(depth: 12);
     print('Best move in Scandinavian: $bestMoveScandinavian');
 
-  print('=== Example 2: Complex Middlegame Position ===');
-    const complexFen = 'r2qkb1r/ppp2ppp/2n1bn2/2bpp3/3PP3/2N2N2/PPP2PPP/R1BQKB1R w KQkq - 0 6';
-    await engine.setPosition(fen: complexFen);
-    
-    print('Analyzing complex position for 5 seconds...');
+  print('=== Example 2: Analysis Stream ===');
+    // Use a working position for analysis
+    const analysisFen = 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1';
+    await engine.setPosition(fen: analysisFen);
+
+    print('Starting analysis stream...');
     final analysisStream = await engine.analyze(timeMs: 5000);
+    
+    print('Listening to analysis...');
+    var count = 0;
+    await for (final analysis in analysisStream) {
+      count++;
+      print('Analysis $count: Depth: ${analysis.depth}, Score: ${analysis.score}, PV: ${analysis.principalVariation.join(' ')}, Nodes: ${analysis.nodes}, Time: ${analysis.timeMs}ms');
+      if (count >= 10) break; // Stop after 10 results for testing
+    }
+    
+    print('Analysis completed with $count results');
+    
+
     
     
     

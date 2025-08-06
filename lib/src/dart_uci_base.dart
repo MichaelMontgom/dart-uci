@@ -56,8 +56,10 @@ Future<void> start() async {
     String? engineAuthor;
     Map<String, dynamic> options = {};
     
-    // gather engine information
-    await for (String line in _outputController!.stream) {
+    final completer = Completer<EngineInfo>();
+    late StreamSubscription subscription;
+    
+    subscription = _outputController!.stream.listen((line) {
       if (line.startsWith('id name ')) {
         engineName = line.substring(8);
       } else if (line.startsWith('id author ')) {
@@ -71,25 +73,28 @@ Future<void> start() async {
           options[optionName] = line;
         }
       } else if (line == 'uciok') {
-        break;
+        subscription.cancel();
+        
+        if (engineName == null) {
+          completer.completeError(UCIException('Engine did not provide a name'));
+          return;
+        }
+        
+        // Create EngineInfo object with gathered data
+        _engineInfo = EngineInfo(
+          name: engineName!,
+          author: engineAuthor ?? 'Unknown',
+          options: options,
+        );
+
+        print(_engineInfo.toString());
+
+        _isInitialized = true;
+        completer.complete(_engineInfo!);
       }
-    }
+    });
     
-    if (engineName == null) {
-      throw UCIException('Engine did not provide a name');
-    }
-    
-    // Create EngineInfo object with gathered data
-    _engineInfo = EngineInfo(
-      name: engineName,
-      author: engineAuthor ?? 'Unknown',
-      options: options,
-    );
-
-    print(_engineInfo.toString());
-
-    _isInitialized = true;
-    return _engineInfo!;
+    return completer.future;
   }
 
   void _ensureInitialized() {
@@ -148,6 +153,8 @@ Future<void> start() async {
     if (moves != null && moves.isNotEmpty) {
       command += ' moves ${moves.join(' ')}';
     }
+
+    print(command);
     
     await sendCommand(command);
   }
@@ -164,13 +171,17 @@ Future<void> start() async {
     
     await sendCommand('isready');
     
-    await for (String line in _outputController!.stream) {
-      if (line == 'readyok') {
-        return true;
-      }
-    }
+    final completer = Completer<bool>();
+    late StreamSubscription subscription;
     
-    return false;
+    subscription = _outputController!.stream.listen((line) {
+      if (line == 'readyok') {
+        subscription.cancel();
+        completer.complete(true);
+      }
+    });
+    
+    return completer.future;
   }
 
   EngineAnalysis? _parseInfoLine(String line) {
@@ -236,19 +247,25 @@ Future<void> start() async {
     if (depth != null) command += ' depth $depth';
     if (timeMs != null) command += ' movetime $timeMs';
     if (depth == null && timeMs == null) command += ' infinite';
+
+    print(command);
     
-    await sendCommand(command);
-    
-    _outputController!.stream.listen((line) {
+    // Set up the listener before sending the command
+    late StreamSubscription subscription;
+    subscription = _outputController!.stream.listen((line) {
       if (line.startsWith('info ')) {
         final analysis = _parseInfoLine(line);
         if (analysis != null) {
           controller.add(analysis);
         }
       } else if (line.startsWith('bestmove ')) {
+        subscription.cancel();
         controller.close();
       }
     });
+    
+    // Send the command after setting up the listener
+    await sendCommand(command);
     
     return controller.stream;
   }
@@ -271,20 +288,35 @@ Future<void> start() async {
     if (depth != null) command += ' depth $depth';
     if (timeMs != null) command += ' movetime $timeMs';
     if (nodes != null) command += ' nodes $nodes';
+    
+    // If no parameters specified, use a default time limit to prevent hanging
+    if (depth == null && timeMs == null && nodes == null) {
+      command += ' movetime 1000';
+    }
 
     await sendCommand(command);
 
-    await for (String line in _outputController!.stream) {
-      print(line);
+    final completer = Completer<UCIMove>();
+    late StreamSubscription subscription;
+    
+    subscription = _outputController!.stream.listen((line) {
       if (line.startsWith('bestmove ')) {
         final parts = line.split(' ');
         if (parts.length >= 2) {
-          return UCIMove.fromString(parts[1]);
+          subscription.cancel();
+          completer.complete(UCIMove.fromString(parts[1]));
         }
       }
-    }
-    
-    throw UCIException('Engine did not provide a best move');
+    });
+
+    // Add a timeout to prevent hanging indefinitely
+    return completer.future.timeout(
+      Duration(seconds: 30),
+      onTimeout: () {
+        subscription.cancel();
+        throw UCIException('getBestMove timed out after 30 seconds');
+      },
+    );
   }
 
 }
